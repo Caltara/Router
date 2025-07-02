@@ -13,6 +13,9 @@ uploaded_file = st.file_uploader("📤 Upload CSV", type=["csv"])
 if uploaded_file:
     df = pd.read_csv(uploaded_file)
 
+    # Round trip option
+    round_trip = st.checkbox("🔁 Return to start location (round trip)?", value=True)
+
     # Determine input method
     use_geocoding = False
     coords = []
@@ -35,21 +38,22 @@ if uploaded_file:
     if st.button("🧠 Optimize Route"):
         with st.spinner("Optimizing..."):
 
-            # If using geocoding, fetch coordinates
             if use_geocoding:
                 coords = geocode_addresses(addresses)
                 if None in coords:
                     st.error("Some addresses failed to geocode. Please check and try again.")
                     st.stop()
 
-            # Optimize the route using OpenRouteService
+            start_coord = coords[0]
+            end_coord = coords[0] if round_trip else coords[-1]
+            middle_coords = coords[1:] if not round_trip else coords[1:]
+
             ors_api_key = st.secrets["ors"]["api_key"]
-            order_dict = optimize_route_ors(coords, ors_api_key)
+            order_dict = optimize_route_ors([start_coord] + middle_coords + [end_coord], ors_api_key)
 
             if order_dict:
-                # Reconstruct ordered list
-                ordered_coords = [coords[0]]
-                ordered_labels = [df.iloc[0]["address"] if use_geocoding else f"{coords[0][1]}, {coords[0][0]}"]
+                ordered_coords = [start_coord]
+                ordered_labels = [df.iloc[0]["address"] if use_geocoding else f"{start_coord[1]}, {start_coord[0]}"]
 
                 for step in order_dict.values():
                     index = coords.index(step)
@@ -57,8 +61,10 @@ if uploaded_file:
                     ordered_coords.append(step)
                     ordered_labels.append(label)
 
-                ordered_coords.append(coords[-1])
-                end_label = df.iloc[-1]["address"] if use_geocoding else f"{coords[-1][1]}, {coords[-1][0]}"
+                ordered_coords.append(end_coord)
+                end_label = df.iloc[0]["address"] if round_trip and use_geocoding else (
+                    df.iloc[-1]["address"] if use_geocoding else f"{end_coord[1]}, {end_coord[0]}"
+                )
                 ordered_labels.append(end_label)
 
                 df_out = pd.DataFrame({
@@ -85,4 +91,4 @@ if uploaded_file:
                     mime="text/csv"
                 )
             else:
-                st.error("Failed to optimize the route using OpenRouteService.")
+                st.error("❌ Failed to optimize the route using OpenRouteService.")
